@@ -1,0 +1,3 @@
+# Dependencies are declared in the project-root requirements.txt.
+# Install with ../setup.sh (recommended) or: pip install -r ../requirements.txt
+-r ../requirements.txt

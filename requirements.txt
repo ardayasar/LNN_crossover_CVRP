@@ -1,0 +1,26 @@
+# ---------------------------------------------------------------------------
+# LNN_crossover_CVRP — Python dependencies
+#
+# NOTE ON TORCH:
+#   `torch` is listed here so that a plain `pip install -r requirements.txt`
+#   works out of the box (it resolves to the default CPU/MPS build from PyPI).
+#   On a CUDA host (e.g. DGX Spark / GB10) you must install torch from the
+#   matching CUDA wheel index FIRST -- use ./setup.sh, which does this for you.
+#
+# Install:
+#   ./setup.sh                      # recommended (handles platform detection)
+#   pip install -r requirements.txt # manual / CPU-only fallback
+# ---------------------------------------------------------------------------
+
+# --- Core ML ---------------------------------------------------------------
+torch>=2.4                 # GA_LNN/lnn/model.py, train_lnn.py, GA.py
+tensorboard>=2.15          # torch.utils.tensorboard.SummaryWriter in train_lnn.py
+
+# --- Numerics & data -------------------------------------------------------
+numpy>=1.24,<3             # encoder.py, train_lnn.py, cvrp_loader.py
+pandas>=2.0                # ttest_vs_aex.py, sensitivity_time_vs_best.py
+scipy>=1.11                # scipy.stats: ttest_rel, effect sizes
+
+# --- Plotting --------------------------------------------------------------
+matplotlib>=3.7            # plot_k4_convergence.py, lnn_arch_diagram.py,
+                           # sensitivity_time_vs_best.py

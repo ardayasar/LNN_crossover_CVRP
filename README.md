@@ -1,135 +1,305 @@
-# LNN Crossover for Capacitated Vehicle Routing Problem (CVRP)
+# LNN Crossover for the Capacitated Vehicle Routing Problem (CVRP)
 
-**Repository**: `AlparslanGuzey/LNN_crossover_CVRP`  
+**Repository**: `AlparslanGuzey/LNN_crossover_CVRP`
 **DOI**: [10.5281/zenodo.15762345](https://doi.org/10.5281/zenodo.15762345)
 
-This repository contains an integrated framework for benchmarking classical and learned crossover operators—including a Liquid Neural Network (LNN)–based crossover—on the Capacitated Vehicle Routing Problem (CVRP). It supports both permutation‐based and random‐key encodings, with or without mutation, and produces detailed CSV logs for downstream analysis and supervised LNN training data.
+An experimental framework for benchmarking classical and learned crossover
+operators — including a Liquid Neural Network (LNN) crossover — on the
+Capacitated Vehicle Routing Problem. It supports both permutation and
+random-key encodings, with and without mutation, and emits per-run CSV logs for
+downstream statistical analysis and supervised LNN training.
+
+> **Status:** research code under revision. `GA.py` currently fails partway
+> through a full sweep, and the committed results in `results/` were produced by
+> an earlier version of the pipeline. See
+> [Status & known issues](#-status--known-issues) before relying on any output.
 
 ---
 
 ## 🚀 Features
 
-- **Eight Crossover Operators**  
-  Permutation-based: `PMX`, `OX`, `CX`, `AEX`, `LNN`  
-  Random-key–based: `BRKGA`, `RK-U`, `RK-GR`, `RK-2PX`
+- **Six benchmarked crossover operators**
+  - Permutation-encoded: `OX`, `CX`, `AEX`, `LNN`
+  - Random-key-encoded: `BRKGA`, `RK-2PX`
 
-- **Mutation Regimes**  
-  Benchmark runs with or without mutation. Supports:
-  - `swap-2` mutation (for permutation encoding)
-  - `bit-flip` mutation (for random-key encoding)
+  Three more are implemented but **not wired into the benchmark**: `PMX`
+  (`pmx_crossover`), `RK-U` (`rk_uniform`), and `RK-GR` (`rk_greedy`). The active
+  set is hardcoded as `ALLOWED_OPS` inside `run_instance_all_operators`
+  (`GA.py:359`).
 
-- **Automated CSV Logging**  
-  - Per-run metrics in:  
-    `results/<instance>_<operator>_<mut|nomut>.csv`  
-  - Aggregated summary table:  
-    `results/summary_table.csv`  
-  - Optional LNN training logs in:  
-    `GA_LNN/data/` (enabled via `LNN_LOG=1`)
+- **Mutation regimes** — every operator is run twice, with and without mutation:
+  - `mut_perm` — swap-2 (permutation encoding)
+  - `mut_rk` — bounded uniform jitter, `±0.1` clamped to `[0,1]` (random-key encoding)
 
-- **LNN Crossover**  
-  - Trained Liquid Neural Network model predicts crossover outputs  
-  - Modular PyTorch implementation in `GA_LNN/lnn/`  
-  - Supports learning new crossover strategies from data
+- **Local search** — route-level 2-opt, applied to the **permutation encoding
+  only** (`GA.py:290`). The random-key operators run without it.
 
-- **Configurable Runtime**  
-  Easily change:
-  - `FEATURE_DIM`, `POP_SIZE`, `MAX_GENERATIONS`
-  - `CROSSOVER_RATE`, `MUTATION_RATE`, `NUM_RUNS`
-  - Target instances and selected operators
+- **Split decoding** — optimal giant-tour → routes dynamic program (`split_cost`),
+  used as the fitness evaluator for both encodings.
+
+- **CSV logging**
+  - Per-run metrics → `results/<instance>_summary_<mut|nomut>.csv`
+  - Per-generation best cost → `results/convergence/<instance>/<op>/<regime>/run_<n>_convergence.csv`
+  - Optional LNN training triples → `GA_LNN/data/` (enable with `LNN_LOG=1`)
+
+- **LNN crossover** — a liquid-inspired recurrent scorer (PyTorch) that maps
+  per-customer features to scores, decoded by descending argsort into a child
+  permutation. See [Model](#-model).
 
 ---
 
-## ⚙️ Installation & Setup
+## ⚙️ Installation
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/AlparslanGuzey/LNN_crossover_CVRP.git
-   cd LNN_crossover_CVRP
+### Quick start (recommended)
 
-	2.	Install dependencies
+```bash
+git clone https://github.com/AlparslanGuzey/LNN_crossover_CVRP.git
+cd LNN_crossover_CVRP
+./setup.sh
+source .venv/bin/activate
+```
 
+`setup.sh` creates a virtualenv, installs the **correct PyTorch build for the
+current host**, installs the remaining dependencies, and verifies the result.
+
+| Host | PyTorch build selected |
+|---|---|
+| macOS / arm64 | default PyPI wheel (CPU + MPS) |
+| Linux / aarch64 + CUDA | `cu130` — Grace-Blackwell, e.g. DGX Spark (GB10, `sm_121`) |
+| Linux / x86_64 + CUDA | `cu128` |
+| anything else | CPU-only |
+
+Options:
+
+```bash
+./setup.sh --cpu                      # force the CPU-only build
+./setup.sh --venv /path/to/env        # custom virtualenv location
+TORCH_CUDA_CHANNEL=cu128 ./setup.sh   # override the CUDA wheel channel
+PYTHON=python3.12 ./setup.sh          # pin the interpreter
+./setup.sh --help
+```
+
+**Requires Python ≥ 3.10.** The script searches for `python3.13` → `python3.12`
+→ `python3.11` → `python3.10` → `python3` and uses the first that qualifies.
+On macOS, the system `/usr/bin/python3` (3.9) is too old for current PyTorch;
+install a newer one with `brew install python@3.12`.
+
+### Manual install
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt     # CPU/MPS build of torch
+```
+
+On a CUDA host, install `torch` from the matching wheel index *first*, then the
+rest:
+
+```bash
+pip install --index-url https://download.pytorch.org/whl/cu130 torch
 pip install -r requirements.txt
+```
 
+### Data
 
-	3.	Prepare CVRP data
-Place .vrp, .dat, and (optionally) .sol files under:
+Place CVRPLIB instance files under:
 
-Data/SCVRP/
-Data/ACVRP/
+```
+Data/SCVRP/      # symmetric,  .vrp + optional .sol   (8 instances included)
+Data/ACVRP/      # asymmetric, .dat + optional .sol   (referenced by the loader,
+                 #                                     not present in this repo)
+```
 
-Update path logic in cvrp_loader.py if needed.
+Best-known costs are parsed from the `Cost` line of the matching `.sol` file
+(`cvrp_loader.py:139`). Instance discovery and path logic live in
+`cvrp_loader.py:154`.
 
-	4.	Download pretrained LNN weights
-Ensure the model file exists at:
+---
 
-GA_LNN/lnn/lnn_hyx.pt
+## 🧪 Usage
 
-Alternatively, train your own model and place it here.
+Run the benchmark:
 
-⸻
-
-🧪 Usage
-
-Run full benchmark:
-
+```bash
 python GA.py
+```
 
-Enable LNN training data logging:
+Generate LNN training data while running:
 
+```bash
 LNN_LOG=1 python GA.py
+```
 
-Customize parameters in GA.py:
+Train the LNN crossover:
 
-FEATURE_DIM     = 3
-POP_SIZE        = 50
-MAX_GENERATIONS = 1000
+```bash
+python -m GA_LNN.train_lnn \
+    --log_dir GA_LNN/data \
+    --epochs 200 \
+    --batch 128 \
+    --lr 3e-4 \
+    --wd 1e-4 \
+    --alpha 0.2 \
+    --aug
+```
+
+### Configuration
+
+Module-level constants in `GA.py:28`:
+
+```python
+FEATURE_DIM     = 3      # rank-in-parent-1 • rank-in-parent-2 • normalized demand
+POP_SIZE        = 25
+MAX_GENERATIONS = 400
 CROSSOVER_RATE  = 1.0
 MUTATION_RATE   = 0.10
-NUM_RUNS        = 30
+NUM_RUNS        = 15
+```
 
-Filter instances/operators:
+Two selections are **not** module-level constants and must be edited in place:
 
-TARGET_INSTANCES = {"E-n51-k5"}
-ALLOWED_OPS      = {"OX", "CX", "AEX", "LNN", "BRKGA", "RK-2PX"}
+- **Instances** — `TARGET` in the `__main__` block (`GA.py:396`). Defaults to
+  `{"E-n22-k4"}`, i.e. a single instance; every other instance is skipped.
+- **Operators** — `ALLOWED_OPS` inside `run_instance_all_operators` (`GA.py:359`).
 
+### Running concurrent benchmark blocks
 
-⸻
+`GA.py` is CPU-bound pure Python and already uses a `ProcessPoolExecutor`. When
+launching several blocks at once, pin BLAS threads so the processes do not
+oversubscribe cores:
 
-📦 Output Files
-	•	Per-instance Logs
-results/<instance>_<op>_nomut.csv
-results/<instance>_<op>_mut.csv
-Columns:
-run, best_cost, avg_cost, std_dev, avg_exc, time
-	•	Summary Table
-results/summary_table.csv
-Columns:
-instance, operator, mut, best, avg, std, avg_exc, time
-	•	LNN Supervised Data (if enabled)
-Stored as pickled tuples:
-(parent1, parent2, child, instance)
-Path: GA_LNN/data/
+```bash
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
+```
 
-⸻
+---
 
-📖 Citation
+## 🧠 Model
 
-If you use this codebase or the LNN crossover in your research, please cite:
+`GA_LNN/lnn/model.py` — `LiquidCrossover`, **12,001 parameters** (52 KB checkpoint):
 
-Alparslan Guzey, “AlparslanGuzey/LNN_crossover_CVRP: Initial LNN crossover for CVRP”, Zenodo, Jun. 28, 2025.
-DOI: 10.5281/zenodo.15762345
+| Stage | Shape |
+|---|---|
+| `in_proj` | `Linear(3 → 48)` + ReLU |
+| `liquid`, `liquid2` | two recurrent liquid layers, `d_model=48`, `liquid_steps=1` |
+| `head` | `Linear(48 → 48)` → GELU → `Linear(48 → 1)` |
 
-⸻
+Each layer integrates `h ← h + (dt/τ)·(−h + tanh(W_x·x + W_h·h + b))` with a
+learnable per-neuron time constant `τ = exp(log_tau) > 0`, applied token-wise
+across customers with shared parameters.
 
-📜 License & Acknowledgements
-	•	Licensed under the MIT License.
-	•	Developed using PyTorch, NumPy, and standard Python tooling.
-	•	Benchmark instances adapted from CVRPLIB.
-	•	Inspired by LiquidCrossover and related neural genetic algorithm literature.
+- **Encoding** (`encoder.py`) — per customer: normalized rank in parent 1,
+  normalized rank in parent 2, demand / capacity. Note that **no coordinate or
+  distance information is supplied**, so instances with identical ranks and
+  demands but different geometry are indistinguishable to the model.
+- **Decoding** (`decoder.py`) — descending argsort of the scores, offset to
+  1-based customer IDs.
+- **Weights** — `GA_LNN/lnn/lnn_hyx.pt`. If missing or incompatible, `GA.py`
+  prints a warning and proceeds with **random initialization** (`GA.py:90`).
 
-⸻
+Training (`GA_LNN/train_lnn.py`) is supervised imitation: the GA logs
+`(parent1, parent2, child, instance)` triples produced by the classical
+operators, and the network is trained to reproduce the child ordering.
 
-🧩 Contributions & Issues
+---
 
-Pull requests are welcome.
-For bug reports or feature requests, please open an issue.
+## 📦 Output files
+
+**Per-run metrics** — `results/<instance>_summary_<mut|nomut>.csv`
+
+| Column | Meaning |
+|---|---|
+| `run` | row index within the file |
+| `best_cost` | minimum Split cost in the final population |
+| `avg_cost` | mean Split cost over the final population |
+| `std_dev` | population SD of the final population — **not** SD across runs |
+| `avg_exc` | `(avg_cost − best_known) / best_known × 100` |
+| `time` | wall-clock seconds for that run |
+
+**Convergence traces** — `results/convergence/<instance>/<op>/<mut|nomut>/run_<n>_convergence.csv`
+with columns `generation, best_cost`.
+
+**LNN training corpus** — `GA_LNN/data/lnn_log_<timestamp>_<uid>.pkl`, each a
+pickled list of `(parent1, parent2, child, instance_name)` tuples with the depot
+sentinels stripped. Flushed every 5,000 samples.
+
+### Analysis scripts
+
+| Script | Purpose |
+|---|---|
+| `ttest_vs_aex.py` | paired t-tests against the AEX baseline |
+| `plot_k4_convergence.py` | convergence figures → `figures/` |
+| `sensitivity_time_vs_best.py` | speed–quality scatter |
+| `generate_logs.py`, `make_logs.sh` | corpus generation driver |
+| `GA_LNN/lnn_arch_diagram.py` | architecture diagram |
+
+---
+
+## ⚠️ Status & known issues
+
+Verified against the committed source. These are open defects, not design
+choices, and they affect how the existing results should be read.
+
+1. **`python GA.py` crashes.** `run_ga_for_instance` returns a dict without an
+   `"operator"` key (`GA.py:338`), but the aggregation step filters on
+   `m["operator"]` (`GA.py:369`). The run raises `KeyError: 'operator'` *after*
+   completing the entire no-mutation sweep, so the compute is spent and then
+   discarded.
+
+2. **`results/` does not match the current code.** The committed files are named
+   `<instance>_<operator>_<regime>.csv`, but `write_metrics_to_csv` emits a
+   single `<instance>_summary_<regime>.csv` per regime (`GA.py:375`). These
+   results came from a different version of the pipeline and should be treated
+   as audit-only.
+
+3. **No selection pressure.** Parents are drawn with
+   `random.randrange(len(fits))` (`GA.py:271`) — uniform random, ignoring
+   fitness. The `fits` list is used only by `elitist_replacement`.
+
+4. **Local search is not shared across encodings.** 2-opt runs only on the
+   permutation path (`GA.py:290`). This makes the permutation/random-key
+   comparison an unequal-compute comparison — in the committed results the
+   random-key operators are ~1500× faster at `n=100` because they do far less
+   work per generation, not because the operators are cheaper in kind.
+
+5. **`std_dev` is not a run-level statistic.** It is `pstdev` over the 25
+   individuals of the converged final population (`GA.py:334`), then averaged
+   across runs. This is why several rows in `summary_table.csv` report exactly
+   `0.0`.
+
+6. **`BRKGA` is a misnomer.** `rk_brkga` (`GA.py:151`) is biased uniform
+   random-key crossover inside the shared GA, not the BRKGA population
+   algorithm (elite/non-elite selection, elite retention, mutants).
+
+7. **`Data/ACVRP/` is referenced but absent** (`cvrp_loader.py:161`), so the
+   asymmetric instances do not load.
+
+---
+
+## 📖 Citation
+
+```bibtex
+@software{guzey_lnn_crossover_cvrp,
+  author  = {Alparslan Guzey},
+  title   = {{AlparslanGuzey/LNN\_crossover\_CVRP}: Initial LNN crossover for CVRP},
+  year    = {2025},
+  month   = jun,
+  doi     = {10.5281/zenodo.15762345},
+  url     = {https://doi.org/10.5281/zenodo.15762345}
+}
+```
+
+---
+
+## 📜 License & acknowledgements
+
+- Licensed under the MIT License.
+- Built with PyTorch, NumPy, SciPy, pandas, and Matplotlib.
+- Benchmark instances adapted from [CVRPLIB](https://galgos.inf.puc-rio.br/cvrplib/en/instances/1).
+- The liquid layer is inspired by
+  [Liquid Time-constant Networks (Hasani et al., 2020)](https://arxiv.org/abs/2006.04439);
+  the implementation here is a custom Euler-style gated recurrence and does not
+  reproduce that architecture exactly.
+
+## 🧩 Contributions & issues
+
+Pull requests are welcome. For bug reports or feature requests, please open an issue.
