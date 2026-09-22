@@ -153,14 +153,19 @@ def read_bks_from_sol(filepath):
 
 def load_all_instances():
     """
-    Loads 16 benchmark instances: 8 symmetric and 8 asymmetric.
-    Uses relative paths based on script location.
+    Loads the benchmark instances present on disk: up to 8 symmetric
+    (Data/SCVRP/*.vrp) and up to 8 asymmetric (Data/ACVRP/*.dat).
+
+    Instance files that are absent are skipped with a warning instead of
+    raising, so the symmetric benchmark runs even when the ACVRP data is not
+    checked in. Raises FileNotFoundError only if nothing at all could be loaded.
     """
     base_dir = os.path.dirname(__file__)
     scvrp_path = os.path.join(base_dir, "Data", "SCVRP")
     acvrp_path = os.path.join(base_dir, "Data", "ACVRP")
 
     instances = []
+    missing = []
 
     symmetric_instances = [
         "E-n22-k4", "E-n51-k5", "E-n76-k7", "E-n76-k8",
@@ -168,10 +173,12 @@ def load_all_instances():
     ]
     for inst_name in symmetric_instances:
         vrp_file = os.path.join(scvrp_path, f"{inst_name}.vrp")
+        if not os.path.isfile(vrp_file):
+            missing.append(vrp_file)
+            continue
         sol_file = os.path.join(scvrp_path, f"{inst_name}.sol")
         bks = read_bks_from_sol(sol_file)
-        instance = load_instance_from_vrp(vrp_file, inst_name, bks)
-        instances.append(instance)
+        instances.append(load_instance_from_vrp(vrp_file, inst_name, bks))
 
     asymmetric_instances = [
         ("A034-02f", 322),
@@ -185,7 +192,22 @@ def load_all_instances():
     ]
     for inst_name, bks_value in asymmetric_instances:
         dat_file = os.path.join(acvrp_path, f"{inst_name}.dat")
-        instance = load_instance_from_dat(dat_file, inst_name, bks_value)
-        instances.append(instance)
+        if not os.path.isfile(dat_file):
+            missing.append(dat_file)
+            continue
+        instances.append(load_instance_from_dat(dat_file, inst_name, bks_value))
 
+    if missing:
+        rel = [os.path.relpath(m, base_dir) for m in missing]
+        print(f"[loader] skipped {len(rel)} missing instance file(s): "
+              f"{', '.join(rel[:3])}{' ...' if len(rel) > 3 else ''}")
+
+    if not instances:
+        raise FileNotFoundError(
+            f"no benchmark instances found under {os.path.join(base_dir, 'Data')}. "
+            "Place CVRPLIB .vrp/.sol files in Data/SCVRP/ (and .dat files in "
+            "Data/ACVRP/ for the asymmetric set)."
+        )
+
+    print(f"[loader] loaded {len(instances)} instance(s)")
     return instances

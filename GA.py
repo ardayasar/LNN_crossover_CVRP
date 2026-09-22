@@ -336,6 +336,7 @@ def run_ga_for_instance(
     avg_exc = ((avg-bks)/bks*100.0) if bks else 0.0
 
     return {
+        "operator":  op_name,   # needed by the aggregation step below
         "best_cost": best,
         "avg_cost":  avg,
         "std_dev":   std,

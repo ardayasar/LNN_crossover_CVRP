@@ -9,9 +9,9 @@ Capacitated Vehicle Routing Problem. It supports both permutation and
 random-key encodings, with and without mutation, and emits per-run CSV logs for
 downstream statistical analysis and supervised LNN training.
 
-> **Status:** research code under revision. `GA.py` currently fails partway
-> through a full sweep, and the committed results in `results/` were produced by
-> an earlier version of the pipeline. See
+> **Status:** research code under revision. `GA.py` runs end to end, but the
+> committed results in `results/` were produced by an earlier version of the
+> pipeline and several methodological defects remain open. See
 > [Status & known issues](#-status--known-issues) before relying on any output.
 
 ---
@@ -25,7 +25,7 @@ downstream statistical analysis and supervised LNN training.
   Three more are implemented but **not wired into the benchmark**: `PMX`
   (`pmx_crossover`), `RK-U` (`rk_uniform`), and `RK-GR` (`rk_greedy`). The active
   set is hardcoded as `ALLOWED_OPS` inside `run_instance_all_operators`
-  (`GA.py:359`).
+  (`GA.py:360`).
 
 - **Mutation regimes** — every operator is run twice, with and without mutation:
   - `mut_perm` — swap-2 (permutation encoding)
@@ -157,9 +157,9 @@ NUM_RUNS        = 15
 
 Two selections are **not** module-level constants and must be edited in place:
 
-- **Instances** — `TARGET` in the `__main__` block (`GA.py:396`). Defaults to
+- **Instances** — `TARGET` in the `__main__` block (`GA.py:397`). Defaults to
   `{"E-n22-k4"}`, i.e. a single instance; every other instance is skipped.
-- **Operators** — `ALLOWED_OPS` inside `run_instance_all_operators` (`GA.py:359`).
+- **Operators** — `ALLOWED_OPS` inside `run_instance_all_operators` (`GA.py:360`).
 
 ### Running concurrent benchmark blocks
 
@@ -239,15 +239,13 @@ sentinels stripped. Flushed every 5,000 samples.
 Verified against the committed source. These are open defects, not design
 choices, and they affect how the existing results should be read.
 
-1. **`python GA.py` crashes.** `run_ga_for_instance` returns a dict without an
-   `"operator"` key (`GA.py:338`), but the aggregation step filters on
-   `m["operator"]` (`GA.py:369`). The run raises `KeyError: 'operator'` *after*
-   completing the entire no-mutation sweep, so the compute is spent and then
-   discarded.
+1. ~~**`python GA.py` crashes** with `KeyError: 'operator'` after completing the
+   entire no-mutation sweep.~~ **Fixed** — `run_ga_for_instance` now returns the
+   `"operator"` key that the aggregation step filters on (`GA.py:339`).
 
 2. **`results/` does not match the current code.** The committed files are named
    `<instance>_<operator>_<regime>.csv`, but `write_metrics_to_csv` emits a
-   single `<instance>_summary_<regime>.csv` per regime (`GA.py:375`). These
+   single `<instance>_summary_<regime>.csv` per regime (`GA.py:376`). These
    results came from a different version of the pipeline and should be treated
    as audit-only.
 
@@ -270,8 +268,12 @@ choices, and they affect how the existing results should be read.
    random-key crossover inside the shared GA, not the BRKGA population
    algorithm (elite/non-elite selection, elite retention, mutants).
 
-7. **`Data/ACVRP/` is referenced but absent** (`cvrp_loader.py:161`), so the
-   asymmetric instances do not load.
+7. ~~**`Data/ACVRP/` is referenced but absent**, so `load_all_instances` raises
+   `FileNotFoundError`.~~ **Fixed** — missing instance files are now skipped with
+   a warning, and the loader raises only if *nothing* could be loaded
+   (`cvrp_loader.py:154`). The asymmetric instances still need their `.dat`
+   files to actually run; without them the benchmark covers the 8 symmetric
+   instances only.
 
 ---
 
