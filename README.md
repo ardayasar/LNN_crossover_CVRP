@@ -104,10 +104,14 @@ pip install -r requirements.txt
 Place CVRPLIB instance files under:
 
 ```
-Data/SCVRP/      # symmetric,  .vrp + optional .sol   (8 instances included)
-Data/ACVRP/      # asymmetric, .dat + optional .sol   (referenced by the loader,
-                 #                                     not present in this repo)
+Data/SCVRP/      # symmetric,  .vrp + .sol   (8 CVRPLIB E-n* instances)
+Data/ACVRP/      # asymmetric, .dat          (8 Fischetti-Toth-Vigo instances)
 ```
+
+Both sets are included in the repository. The asymmetric set comes from the
+[VRP-REP FTV1994 dataset](https://www.vrp-rep.org/datasets/item/ftv1994.html);
+source, retrieval date, checksums and consistency checks are recorded in
+[`Data/ACVRP/PROVENANCE.md`](Data/ACVRP/PROVENANCE.md).
 
 Best-known costs are parsed from the `Cost` line of the matching `.sol` file
 (`cvrp_loader.py:139`). Instance discovery and path logic live in
@@ -269,11 +273,14 @@ choices, and they affect how the existing results should be read.
    algorithm (elite/non-elite selection, elite retention, mutants).
 
 7. ~~**`Data/ACVRP/` is referenced but absent**, so `load_all_instances` raises
-   `FileNotFoundError`.~~ **Fixed** — missing instance files are now skipped with
-   a warning, and the loader raises only if *nothing* could be loaded
-   (`cvrp_loader.py:154`). The asymmetric instances still need their `.dat`
-   files to actually run; without them the benchmark covers the 8 symmetric
-   instances only.
+   `FileNotFoundError`.~~ **Fixed** — the 8 FTV1994 `.dat` files are now included,
+   and missing instance files are skipped with a warning rather than raising
+   (`cvrp_loader.py:154`). All 16 instances load.
+
+   Caveat: loading is not the same as validating. The best-known values in
+   `cvrp_loader.py` are hardcoded and have not been checked against an
+   independent route checker, and the asymmetric set has no `.sol` files. See
+   the revision plan's validation step before using ACVRP results.
 
 ---
 
