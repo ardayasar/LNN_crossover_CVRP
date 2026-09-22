@@ -31,8 +31,10 @@ downstream statistical analysis and supervised LNN training.
   - `mut_perm` — swap-2 (permutation encoding)
   - `mut_rk` — bounded uniform jitter, `±0.1` clamped to `[0,1]` (random-key encoding)
 
-- **Local search** — route-level 2-opt, applied to the **permutation encoding
-  only** (`GA.py:290`). The random-key operators run without it.
+- **Local search** — 2-opt, applied to the **permutation encoding only**
+  (`GA.py:290`). Note this is *giant-tour* 2-opt, not route-level: it minimizes
+  the TSP length of the whole permutation, which is not the objective `fitness`
+  measures. See known issue 8.
 
 - **Split decoding** — optimal giant-tour → routes dynamic program (`split_cost`),
   used as the fitness evaluator for both encodings.
@@ -281,6 +283,36 @@ choices, and they affect how the existing results should be read.
    `cvrp_loader.py` are hardcoded and have not been checked against an
    independent route checker, and the asymmetric set has no `.sol` files. See
    the revision plan's validation step before using ACVRP results.
+
+8. **2-opt optimizes the wrong objective — this is the most consequential
+   defect found so far.** A GA chromosome carries the depot only at its ends,
+   so `split_routes` (`GA.py:184`) returns a *single* route spanning all
+   customers, and `two_opt_route` then improves it as an uncapacitated TSP
+   tour. But `fitness` scores the chromosome with `split_cost`, which
+   re-partitions it under capacity. The two objectives are different, and near
+   good solutions they are anticorrelated.
+
+   Demonstrated on the known optimum of `E-n22-k4`:
+
+   | | TSP tour length | CVRP Split cost |
+   |---|---|---|
+   | reference solution (`.sol`, cost 375) | 339 | **375** |
+   | after `two_opt_improvement` | 283 (better) | **436 (worse)** |
+
+   On random tours the two objectives still correlate, so 2-opt helps early —
+   across 30 random tours it never degraded Split cost. The damage appears only
+   near the optimum, which is exactly where it matters: the GA cannot retain an
+   optimal permutation, because its own local search would degrade it. This is
+   consistent with every permutation operator plateauing at 377 and none ever
+   reaching the reference 375.
+
+   Independently verified as *not* a loader or evaluator problem: the reference
+   routes cost exactly 375 under the loaded matrix, serve all 21 customers once
+   within capacity, and `split_cost` on the reference giant tour returns 375.
+
+   The fix is to apply 2-opt to the routes produced by Split, rather than to
+   the giant tour. That changes search behaviour, so it is recorded here rather
+   than applied.
 
 ---
 
