@@ -39,6 +39,69 @@ class CVRPInstance:
         self.distance_matrix = distance_matrix
         self.best_known_solution = best_known_solution
 
+def _parse_depot(lines):
+    """
+    Return the 1-based depot node id from DEPOT_SECTION, defaulting to 1.
+
+    TSPLIB lists depots one per line after the header, terminated by -1 or EOF.
+    Only the first is used; these benchmarks are all single-depot.
+    """
+    in_section = False
+    for line in lines:
+        s = line.strip()
+        if not s:
+            continue
+        up = s.upper()
+        if up.startswith("DEPOT_SECTION"):
+            in_section = True
+            continue
+        if in_section:
+            if up.startswith("EOF") or s.startswith("-1"):
+                break
+            if any(ch.isalpha() for ch in s):     # next section header
+                break
+            try:
+                value = int(s.split()[0])
+            except ValueError:
+                break
+            if value > 0:
+                return value
+            break
+    return 1
+
+
+def _move_depot_to_front(depot, demands, distance_matrix, source=""):
+    """
+    Put the depot at index 0.
+
+    GA.py assumes node 0 is the depot throughout (distance_matrix[0][...],
+    demands[0]), but benchmark files do not all agree. The CVRPLIB E-n*
+    instances name node 1, which already maps to index 0; the Fischetti-Toth-
+    Vigo ACVRP instances name node N, i.e. the *last* node. Without this
+    permutation those instances load with customer 1 acting as the depot and
+    the real depot treated as a customer.
+
+    Both axes of the distance matrix are permuted, which matters for the
+    asymmetric set where the matrix is not its own transpose.
+    """
+    n = len(demands)
+    k = depot - 1                                  # DEPOT_SECTION is 1-based
+    if not 0 <= k < n:
+        raise ValueError(
+            f"{source}: DEPOT_SECTION names node {depot}, outside 1..{n}")
+
+    if k != 0:
+        order = [k] + [i for i in range(n) if i != k]
+        demands = [demands[i] for i in order]
+        distance_matrix = distance_matrix[np.ix_(order, order)]
+
+    if demands[0] != 0:
+        raise ValueError(
+            f"{source}: depot (node {depot}) has demand {demands[0]}, expected 0")
+
+    return demands, distance_matrix
+
+
 def load_instance_from_vrp(filepath, name, best_known_solution):
     """
     Loads a .vrp file in standard CVRPLIB style.
@@ -85,6 +148,9 @@ def load_instance_from_vrp(filepath, name, best_known_solution):
             xj, yj = coords[j]
             dist_matrix[i][j] = round(np.hypot(xi - xj, yi - yj))
 
+    demands, dist_matrix = _move_depot_to_front(
+        _parse_depot(lines), demands, dist_matrix, source=os.path.basename(filepath))
+
     return CVRPInstance(name=name,
                         num_customers=n-1,
                         vehicle_capacity=capacity,
@@ -128,6 +194,10 @@ def load_instance_from_dat(filepath, name, best_known_solution):
 
     distance_matrix = np.array(distance_matrix)
     num_nodes = len(demands)
+
+    demands, distance_matrix = _move_depot_to_front(
+        _parse_depot(lines), demands, distance_matrix,
+        source=os.path.basename(filepath))
 
     return CVRPInstance(name=name,
                         num_customers=num_nodes - 1,

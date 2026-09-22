@@ -115,6 +115,13 @@ Both sets are included in the repository. The asymmetric set comes from the
 source, retrieval date, checksums and consistency checks are recorded in
 [`Data/ACVRP/PROVENANCE.md`](Data/ACVRP/PROVENANCE.md).
 
+**Depot indexing.** `GA.py` assumes node index 0 is the depot. Benchmark files
+do not all agree: CVRPLIB `E-n*` names node 1 (already index 0), while the
+FTV1994 instances name node *N*, the last node. The loader reads
+`DEPOT_SECTION` and permutes demands and **both axes** of the distance matrix
+so the depot lands at index 0 (`cvrp_loader.py:42`). It raises if the declared
+depot has nonzero demand or falls outside the node range.
+
 Best-known costs are parsed from the `Cost` line of the matching `.sol` file
 (`cvrp_loader.py:139`). Instance discovery and path logic live in
 `cvrp_loader.py:154`.
@@ -298,6 +305,10 @@ choices, and they affect how the existing results should be read.
    `FileNotFoundError`.~~ **Fixed** — the 8 FTV1994 `.dat` files are now included,
    and missing instance files are skipped with a warning rather than raising
    (`cvrp_loader.py:154`). All 16 instances load.
+
+   The depot-indexing defect this exposed (FTV1994 places the depot last, and
+   the loader ignored `DEPOT_SECTION`, so all 8 instances loaded with customer 1
+   acting as depot) is also fixed; `smoke_test.py` stage 2 guards it.
 
    Caveat: loading is not the same as validating. The best-known values in
    `cvrp_loader.py` are hardcoded and have not been checked against an
