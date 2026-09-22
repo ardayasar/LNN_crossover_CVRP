@@ -14,7 +14,7 @@ $ python -m GA_LNN.train_lnn \
 """
 from __future__ import annotations
 
-import argparse, os, pickle, random, warnings
+import argparse, os, pickle, random, time, warnings
 from pathlib import Path
 from typing import List
 
@@ -28,6 +28,7 @@ from torch.utils.tensorboard import SummaryWriter
 from GA_LNN.lnn.encoder import encode_parents
 from GA_LNN.lnn.model    import LiquidCrossover
 from cvrp_loader         import load_all_instances, CVRPInstance
+from progress            import iterate, fmt_time
 
 # -------------------------------------------------------------
 #  Static config
@@ -143,10 +144,10 @@ def _forward(model, feats, mask, pos, alpha):
     kt    = kendall_tau_loss(preds[mask], pos[mask])
     return mse + alpha * kt, mse, kt, preds
 
-def train_epoch(model, loader, opt, device, alpha):
+def train_epoch(model, loader, opt, device, alpha, label="train"):
     model.train()
     tl = tm = tk = 0.0
-    for feats, pos, mask in loader:
+    for feats, pos, mask in iterate(loader, label=label):
         feats, pos, mask = feats.to(device), pos.to(device), mask.to(device)
         loss, mse, kt, _ = _forward(model, feats, mask, pos, alpha)
         opt.zero_grad(); loss.backward(); opt.step()
@@ -155,10 +156,10 @@ def train_epoch(model, loader, opt, device, alpha):
     return tl / n, tm / n, tk / n
 
 @torch.no_grad()
-def eval_epoch(model, loader, device, alpha):
+def eval_epoch(model, loader, device, alpha, label="val"):
     model.eval()
     vl = vm = vk = va = 0.0
-    for feats, pos, mask in loader:
+    for feats, pos, mask in iterate(loader, label=label):
         feats, pos, mask = feats.to(device), pos.to(device), mask.to(device)
         loss, mse, kt, preds = _forward(model, feats, mask, pos, alpha)
         # simple position-match accuracy
@@ -216,9 +217,13 @@ def main():
                          "val_loss","val_mse","val_kt","val_acc","lr"])
 
     best_val = float("inf")
+    _run_start = time.time()
     for epoch in range(1, args.epochs + 1):
-        tr_loss, tr_mse, tr_kt   = train_epoch(model, train_ld, opt, device, args.alpha)
-        val_loss, val_mse, val_kt, val_acc = eval_epoch(model, val_ld, device, args.alpha)
+        _tag = f"epoch {epoch}/{args.epochs}"
+        tr_loss, tr_mse, tr_kt   = train_epoch(model, train_ld, opt, device,
+                                               args.alpha, label=f"{_tag} train")
+        val_loss, val_mse, val_kt, val_acc = eval_epoch(model, val_ld, device,
+                                                        args.alpha, label=f"{_tag} val")
         sched.step()
 
         writer.add_scalars("Loss", {"train": tr_loss, "val": val_loss}, epoch)
@@ -231,7 +236,11 @@ def main():
                              val_loss, val_mse, val_kt, val_acc,
                              sched.get_last_lr()[0]])
 
-        print(f"Epoch {epoch:03d} │ val MSE={val_mse:6.4f} │ KT={val_kt:6.4f} │ Acc={val_acc:.3f}")
+        _el = time.time() - _run_start
+        _eta = (_el / epoch) * (args.epochs - epoch)
+        print(f"Epoch {epoch:03d}/{args.epochs} │ val MSE={val_mse:6.4f} │ "
+              f"KT={val_kt:6.4f} │ Acc={val_acc:.3f} │ "
+              f"elapsed {fmt_time(_el)} │ eta {fmt_time(_eta)}", flush=True)
 
         if val_mse < best_val:
             best_val = val_mse

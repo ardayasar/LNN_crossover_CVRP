@@ -21,6 +21,7 @@ from cvrp_loader import load_all_instances, CVRPInstance
 from GA_LNN.lnn.model import LiquidCrossover
 from GA_LNN.lnn.encoder import encode_parents
 from GA_LNN.lnn.decoder import scores_to_perm
+from progress import Progress
 import concurrent.futures
 import multiprocessing
 
@@ -345,6 +346,32 @@ def run_ga_for_instance(
     }
 
 
+def _run_parallel(args, label):
+    """
+    Run GA tasks across processes, reporting progress to stderr.
+
+    Results are returned in the same order as `args`, exactly as
+    ProcessPoolExecutor.map would, so downstream aggregation is unchanged.
+    """
+    results = [None] * len(args)
+    with concurrent.futures.ProcessPoolExecutor() as ex, \
+            Progress(len(args), label) as prog:
+        futures = {ex.submit(parallel_run_ga, a): i for i, a in enumerate(args)}
+        pending = set(futures)
+        while pending:
+            done, pending = concurrent.futures.wait(
+                pending, timeout=5.0,
+                return_when=concurrent.futures.FIRST_COMPLETED)
+            for fut in done:
+                i = futures[fut]
+                results[i] = fut.result()
+                prog.update(note=f"{args[i][1]} run {args[i][5]}")
+            if not done:
+                # nothing finished in this window - keep the clock alive
+                prog.tick(note=f"{len(pending)} running")
+    return results
+
+
 # ───────────────────────────  Per-instance driver  ─────────────────────────────
 def _print_table(title:str, results:Dict[str,dict]):
     print(title)
@@ -365,8 +392,7 @@ def run_instance_all_operators(inst: CVRPInstance):
     args0=[(inst,op,"permutation" if op in ("OX","CX","AEX","LNN") else "randomkey",
             fn,False,run+1)
            for run in range(NUM_RUNS) for op,fn in ALLOWED_OPS.items()]
-    with concurrent.futures.ProcessPoolExecutor() as ex:
-        metrics0=list(ex.map(parallel_run_ga,args0))
+    metrics0=_run_parallel(args0, f"{inst.name} no-mutation")
     res0={op:{"best_cost":min(m["best_cost"] for m in metrics0 if m["operator"]==op),
               "avg_cost":statistics.mean(m["avg_cost"] for m in metrics0 if m["operator"]==op),
               "std_dev":statistics.mean(m["std_dev"] for m in metrics0 if m["operator"]==op),
@@ -380,8 +406,7 @@ def run_instance_all_operators(inst: CVRPInstance):
     args1=[(inst,op,"permutation" if op in ("OX","CX","AEX","LNN") else "randomkey",
             fn,True,run+1)
            for run in range(NUM_RUNS) for op,fn in ALLOWED_OPS.items()]
-    with concurrent.futures.ProcessPoolExecutor() as ex:
-        metrics1=list(ex.map(parallel_run_ga,args1))
+    metrics1=_run_parallel(args1, f"{inst.name} with-mutation")
     res1={op:{"best_cost":min(m["best_cost"] for m in metrics1 if m["operator"]==op),
               "avg_cost":statistics.mean(m["avg_cost"] for m in metrics1 if m["operator"]==op),
               "std_dev":statistics.mean(m["std_dev"] for m in metrics1 if m["operator"]==op),

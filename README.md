@@ -167,6 +167,26 @@ Two selections are **not** module-level constants and must be edited in place:
   `{"E-n22-k4"}`, i.e. a single instance; every other instance is skipped.
 - **Operators** — `ALLOWED_OPS` inside `run_instance_all_operators` (`GA.py:360`).
 
+### Progress reporting
+
+Both the benchmark and training print live progress to **stderr**, so piped
+stdout (result tables) stays clean:
+
+```bash
+python GA.py                 # progress on the terminal
+python GA.py > results.log   # tables to the file, progress still on screen
+python GA.py 2> progress.log # the reverse
+PROGRESS=0 python GA.py      # silence it
+```
+
+On a terminal it rewrites one line with a bar, count, elapsed and ETA. When
+redirected to a file it writes a timestamped line every 30 s instead, so logs
+stay readable. Long-running sweeps emit a heartbeat every 5 s even when no task
+has finished, showing how many runs are still in flight.
+
+`smoke_test.py` is the fast way to check a change before committing to a full
+sweep - it exercises the whole pipeline in about a second.
+
 ### Running concurrent benchmark blocks
 
 `GA.py` is CPU-bound pure Python and already uses a `ProcessPoolExecutor`. When
