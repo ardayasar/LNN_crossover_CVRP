@@ -106,9 +106,17 @@ pip install -r requirements.txt
 Place CVRPLIB instance files under:
 
 ```
-Data/SCVRP/      # symmetric,  .vrp + .sol   (8 CVRPLIB E-n* instances)
+Data/SCVRP/      # symmetric,  .vrp + .sol   (123 instances: 100 Set-X,
+                 #                            12 Golden, 8 E-n*, 2 M-n*, 1 F-n*)
 Data/ACVRP/      # asymmetric, .dat          (8 Fischetti-Toth-Vigo instances)
 ```
+
+See [`Data/SCVRP/README.md`](Data/SCVRP/README.md) for families, verification
+and distance conventions, and `Data/SCVRP/INSTANCE_REGISTRY.csv` for
+per-instance provenance and checksums. **Note:** `load_all_instances()` reads a
+hardcoded list of eight `E-n*` names, so the Set-X and Golden files are present
+but not yet reachable; Golden also needs an unrounded-distance path that does
+not exist yet.
 
 Both sets are included in the repository. The asymmetric set comes from the
 [VRP-REP FTV1994 dataset](https://www.vrp-rep.org/datasets/item/ftv1994.html);
